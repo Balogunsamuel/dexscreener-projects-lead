@@ -25,10 +25,9 @@ from telethon.errors import (
     UsernameInvalidError,
     UsernameNotOccupiedError,
 )
-from telethon.tl.functions.channels import GetFullChannelRequest, GetParticipantsRequest
+from telethon.tl.functions.channels import GetFullChannelRequest
 from telethon.tl.functions.messages import GetFullChatRequest
 from telethon.tl.types import (
-    ChannelParticipantAdmin,
     ChannelParticipantCreator,
     ChannelParticipantsAdmins,
 )
@@ -46,11 +45,14 @@ class TelegramAdminExtractor:
 
     def __init__(self, config: Config):
         self._config = config
+        self._enabled = config.telegram_admin_enabled
         self._client: Optional[TelegramClient] = None
         self._connected = False
 
     async def connect(self) -> None:
         """Initialize and connect the Telethon client."""
+        if not self._enabled:
+            return
         if self._connected:
             return
 
@@ -89,6 +91,9 @@ class TelegramAdminExtractor:
           - group_description: for further social link extraction
           - pinned_message_text: for further social link extraction
         """
+        if not self._enabled:
+            return AdminResult(admins_hidden=True)
+
         if not self._client or not self._connected:
             await self.connect()
 

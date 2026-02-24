@@ -4,15 +4,14 @@ SQLite persistence layer using aiosqlite.
 
 from __future__ import annotations
 
-import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 import aiosqlite
 
-from .models import LeadRecord, TelegramAdmin
+from .models import LeadRecord
 
 logger = logging.getLogger("dexbot.database")
 
@@ -178,7 +177,7 @@ class Database:
                 pair_address,
                 dexscreener_url,
                 pair_created_at.isoformat(),
-                datetime.utcnow().isoformat(),
+                datetime.now(timezone.utc).isoformat(),
             ),
         )
         await self._conn.commit()

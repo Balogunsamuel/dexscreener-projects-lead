@@ -6,7 +6,8 @@ Sends formatted lead messages to a private Telegram channel.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from html import escape as html_escape
+from urllib.parse import urlparse
 
 from telegram import Bot
 from telegram.constants import ParseMode
@@ -87,51 +88,40 @@ class Notifier:
             admin_lines = []
             for admin in lead.admins:
                 creator_tag = " (creator)" if admin.is_creator else ""
-                admin_lines.append(f"  • @{admin.username}{creator_tag}")
+                admin_lines.append(f"  • @{_escape(admin.username)}{creator_tag}")
             admins_text = "\n".join(admin_lines)
         elif lead.admins_hidden:
             admins_text = "  ⚠️ Admins hidden"
         else:
             admins_text = "  ❌ No admins found"
 
-        # Twitter
-        twitter_text = (
-            f'<a href="{lead.twitter_link}">{lead.twitter_link}</a>'
-            if lead.twitter_link
-            else "Not found"
-        )
+        social_lines = []
+        if lead.telegram_link:
+            social_lines.append(f"💬 <b>Telegram:</b> {_format_link(lead.telegram_link)}")
+        if lead.twitter_link:
+            social_lines.append(f"🐦 <b>Twitter:</b> {_format_link(lead.twitter_link)}")
+        if lead.website:
+            social_lines.append(f"🌐 <b>Website:</b> {_format_link(lead.website)}")
 
-        # Website
-        website_text = lead.website if lead.website else "Not found"
-
-        # Deployer wallet
-        wallet_text = lead.deployer_wallet if lead.deployer_wallet else "Not found"
-
-        # Contract address — truncated for display
-        contract_display = lead.token_address
-        if len(contract_display) > 20:
-            contract_display = f"{contract_display[:6]}…{contract_display[-4:]}"
+        social_section = ""
+        if social_lines:
+            social_section = "\n".join(social_lines) + "\n\n"
 
         message = (
             f"🚀 <b>New Dexscreener Lead Detected</b>\n"
             f"\n"
-            f"{emoji} <b>Chain:</b> {lead.chain.upper()}\n"
+            f"{emoji} <b>Chain:</b> {_escape(lead.chain.upper())}\n"
             f"📛 <b>Name:</b> {_escape(lead.token_name)}\n"
             f"🏷 <b>Symbol:</b> ${_escape(lead.token_symbol)}\n"
-            f"📋 <b>Contract:</b> <code>{lead.token_address}</code>\n"
+            f"📋 <b>Contract:</b> <code>{_escape(lead.token_address)}</code>\n"
             f"\n"
-            f"💬 <b>Telegram:</b> {lead.telegram_link}\n"
+            f"{social_section}"
             f"👥 <b>Admins:</b>\n"
             f"{admins_text}\n"
             f"\n"
-            f"🐦 <b>Twitter:</b> {twitter_text}\n"
-            f"🌐 <b>Website:</b> {website_text}\n"
-            f"\n"
-            f"💳 <b>Deployer Wallet:</b>\n"
-            f"<code>{wallet_text}</code>\n"
-            f"\n"
+            f"{_format_wallet_section(lead.deployer_wallet)}"
             f"📊 <b>Dexscreener:</b>\n"
-            f"{lead.dexscreener_url}\n"
+            f"{_format_link(lead.dexscreener_url)}\n"
         )
 
         return message
@@ -139,8 +129,23 @@ class Notifier:
 
 def _escape(text: str) -> str:
     """Escape HTML special characters."""
+    return html_escape(text, quote=True)
+
+
+def _format_link(url: str | None) -> str:
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return _escape(url)
+    safe_url = _escape(url)
+    return f'<a href="{safe_url}">{safe_url}</a>'
+
+
+def _format_wallet_section(wallet: str | None) -> str:
+    if not wallet:
+        return ""
     return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
+        "💳 <b>Deployer Wallet:</b>\n"
+        f"<code>{_escape(wallet)}</code>\n\n"
     )

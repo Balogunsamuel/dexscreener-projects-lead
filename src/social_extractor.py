@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Optional
 from urllib.parse import urlparse
 
 import httpx
@@ -25,7 +24,8 @@ TWITTER_PATTERN = re.compile(r"https?://(?:twitter\.com|x\.com)/([A-Za-z0-9_]+)"
 class SocialExtractor:
     """Validates and enriches social links."""
 
-    def __init__(self):
+    def __init__(self, strict_validation: bool = False):
+        self._strict_validation = strict_validation
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(10.0),
             follow_redirects=True,
@@ -102,8 +102,10 @@ class SocialExtractor:
 
         # Validate Twitter (soft validation)
         if twitter:
-            await self.validate_twitter_link(twitter)
-            # Keep it regardless — Dexscreener metadata is trustworthy enough
+            is_valid_twitter = await self.validate_twitter_link(twitter)
+            if self._strict_validation and not is_valid_twitter:
+                logger.info("Invalid Twitter/X link discarded in strict mode: %s", twitter)
+                twitter = None
 
         # Normalize website to domain
         if website:

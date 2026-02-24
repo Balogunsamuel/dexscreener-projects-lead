@@ -49,6 +49,9 @@ class WalletLookup:
         Returns:
             The deployer wallet address, or None if not found.
         """
+        if not self._config.enable_wallet_lookup:
+            return None
+
         # ── Method 3: Solana RPC (for solana chain) ──
         if chain == "solana":
             return await self._get_solana_deployer(contract_address)

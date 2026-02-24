@@ -10,11 +10,10 @@ env/
 
 # Environment files
 .env
-.env.example
 
 # Database
 data/
-*.dbgit 
+*.db
 
 # Telethon session files
 *.session
