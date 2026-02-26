@@ -82,19 +82,6 @@ class Notifier:
         }
         emoji = chain_emoji.get(lead.chain, "🔗")
 
-        # Admins section
-        admins_text = ""
-        if lead.admins:
-            admin_lines = []
-            for admin in lead.admins:
-                creator_tag = " (creator)" if admin.is_creator else ""
-                admin_lines.append(f"  • @{_escape(admin.username)}{creator_tag}")
-            admins_text = "\n".join(admin_lines)
-        elif lead.admins_hidden:
-            admins_text = "  ⚠️ Admins hidden"
-        else:
-            admins_text = "  ❌ No admins found"
-
         social_lines = []
         if lead.telegram_link:
             social_lines.append(f"💬 <b>Telegram:</b> {_format_link(lead.telegram_link)}")
@@ -116,9 +103,6 @@ class Notifier:
             f"📋 <b>Contract:</b> <code>{_escape(lead.token_address)}</code>\n"
             f"\n"
             f"{social_section}"
-            f"👥 <b>Admins:</b>\n"
-            f"{admins_text}\n"
-            f"\n"
             f"{_format_wallet_section(lead.deployer_wallet)}"
             f"📊 <b>Dexscreener:</b>\n"
             f"{_format_link(lead.dexscreener_url)}\n"

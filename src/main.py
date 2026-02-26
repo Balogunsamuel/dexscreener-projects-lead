@@ -360,10 +360,9 @@ class LeadBot:
                 poll_metrics["notify_failed"] += 1
 
             logger.info(
-                "✅ Lead processed: %s/%s | TG admins: %d | Wallet: %s",
+                "✅ Lead processed: %s/%s | Wallet: %s",
                 lead.chain.upper(),
                 lead.token_symbol,
-                len(lead.admins),
                 "✓" if lead.deployer_wallet else "✗",
             )
 

@@ -38,7 +38,8 @@ class NotifierTests(unittest.TestCase):
 
         self.assertIn("Bad &lt;b&gt;Token&lt;/b&gt; &amp; Co", message)
         self.assertIn("$T&lt;KN&gt;", message)
-        self.assertIn("@adm&lt;in&gt;", message)
+        self.assertNotIn("<b>Admins:</b>", message)
+        self.assertNotIn("@adm&lt;in&gt;", message)
         self.assertIn("<code>0xabc&lt;123&gt;</code>", message)
         self.assertIn("javascript:alert(1)", message)
         self.assertIn(
