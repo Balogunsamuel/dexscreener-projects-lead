@@ -47,6 +47,7 @@ class LeadBot:
         )
         self._tg_admin = TelegramAdminExtractor(self._config)
         self._telegram_admin_runtime_enabled = self._config.telegram_admin_enabled
+        self._telegram_admin_degraded = False
         self._wallet = WalletLookup(self._config)
         self._db = Database(self._config.database_path)
         self._notifier = Notifier(self._config)
@@ -79,6 +80,13 @@ class LeadBot:
             self._config.dexscreener_pair_fetch_concurrency,
         )
         logger.info(
+            "Notification retries: max_attempts=%d base_delay=%ds max_delay=%ds batch_size=%d",
+            self._config.notification_retry_max_attempts,
+            self._config.notification_retry_base_delay_seconds,
+            self._config.notification_retry_max_delay_seconds,
+            self._config.notification_retry_batch_size,
+        )
+        logger.info(
             "Filters: enforce=%s require_tg=%s require_visible_admin=%s reject_hidden_admins=%s",
             self._enforce_filters,
             self._config.require_telegram_for_lead,
@@ -100,6 +108,7 @@ class LeadBot:
             except Exception as e:
                 self._service_errors["telegram_admin"] += 1
                 self._telegram_admin_runtime_enabled = False
+                self._telegram_admin_degraded = True
                 logger.warning(
                     "Telethon connection failed (admin extraction will be skipped): %s", e
                 )
@@ -157,7 +166,7 @@ class LeadBot:
             self._metrics["polls"],
             self._metrics["discoveries"],
             self._metrics["processed"],
-            self._metrics["notified"],
+            self._metrics["notified"] + self._metrics["retried_notified"],
             self._metrics["skipped_total"],
         )
         self._log_service_health()
@@ -179,6 +188,7 @@ class LeadBot:
         self._metrics["polls"] += 1
         poll_metrics: Counter[str] = Counter()
         logger.info("━━━ Poll #%d ━━━", self._metrics["polls"])
+        await self._retry_pending_notifications(poll_metrics)
 
         # Step 1: Discover new tokens from Dexscreener
         self._service_attempts["dex"] += 1
@@ -206,6 +216,7 @@ class LeadBot:
                     poll_metrics=poll_metrics,
                     reason_key="skipped_social_error",
                     reason_message="social validation error",
+                    register_token=False,
                 )
                 continue
 
@@ -224,6 +235,7 @@ class LeadBot:
                 continue
 
             # Step 4: Extract Telegram admins
+            admin_extraction_failed = False
             admin_result = AdminResult(admins_hidden=not bool(socials.telegram_link))
             if socials.telegram_link:
                 if self._telegram_admin_runtime_enabled:
@@ -235,6 +247,8 @@ class LeadBot:
                     except Exception as e:
                         self._service_errors["telegram_admin"] += 1
                         self._telegram_admin_runtime_enabled = False
+                        self._telegram_admin_degraded = True
+                        admin_extraction_failed = True
                         logger.warning(
                             "Admin extraction failed for %s/%s: %s",
                             token_pair.chain,
@@ -277,6 +291,7 @@ class LeadBot:
                     poll_metrics=poll_metrics,
                     reason_key="skipped_no_visible_admins",
                     reason_message="no visible admins",
+                    register_token=not (admin_extraction_failed or self._telegram_admin_degraded),
                 )
                 continue
 
@@ -291,6 +306,7 @@ class LeadBot:
                     poll_metrics=poll_metrics,
                     reason_key="skipped_admins_hidden",
                     reason_message="admins hidden",
+                    register_token=not (admin_extraction_failed or self._telegram_admin_degraded),
                 )
                 continue
 
@@ -356,8 +372,20 @@ class LeadBot:
             poll_metrics["processed"] += 1
             if success:
                 poll_metrics["notified"] += 1
+                self._service_attempts["db"] += 1
+                try:
+                    await self._db.mark_notified(lead.chain, lead.token_address)
+                except Exception as e:
+                    self._service_errors["db"] += 1
+                    logger.warning(
+                        "Failed to mark notified for %s/%s: %s",
+                        lead.chain,
+                        lead.token_symbol,
+                        e,
+                    )
             else:
                 poll_metrics["notify_failed"] += 1
+                await self._record_notification_failure(lead, poll_metrics)
 
             logger.info(
                 "✅ Lead processed: %s/%s | Wallet: %s",
@@ -373,7 +401,7 @@ class LeadBot:
             "Poll complete — discovered=%d processed=%d notified=%d skipped=%d",
             poll_metrics["discoveries"],
             poll_metrics["processed"],
-            poll_metrics["notified"],
+            poll_metrics["notified"] + poll_metrics["retried_notified"],
             poll_metrics["skipped_already_seen"]
             + poll_metrics["skipped_no_telegram"]
             + poll_metrics["skipped_no_visible_admins"]
@@ -388,6 +416,7 @@ class LeadBot:
         poll_metrics: Counter[str],
         reason_key: str,
         reason_message: str,
+        register_token: bool = True,
     ) -> None:
         poll_metrics[reason_key] += 1
         self._metrics["skipped_total"] += 1
@@ -397,7 +426,7 @@ class LeadBot:
             token_pair.token_symbol,
             reason_message,
         )
-        if not self._config.register_skipped_tokens:
+        if not register_token or not self._config.register_skipped_tokens:
             return
         self._service_attempts["db"] += 1
         try:
@@ -419,6 +448,97 @@ class LeadBot:
                 token_pair.token_symbol,
                 e,
             )
+
+    async def _retry_pending_notifications(self, poll_metrics: Counter[str]) -> None:
+        self._service_attempts["db"] += 1
+        try:
+            pending = await self._db.get_unnotified_leads(
+                limit=self._config.notification_retry_batch_size
+            )
+        except Exception as e:
+            self._service_errors["db"] += 1
+            logger.warning("Failed to load pending notifications: %s", e)
+            return
+
+        if not pending:
+            return
+
+        logger.info("Retrying %d pending notifications", len(pending))
+        for lead in pending:
+            self._service_attempts["notifier"] += 1
+            try:
+                success = await self._notifier.send_lead(lead)
+            except Exception as e:
+                self._service_errors["notifier"] += 1
+                poll_metrics["retried_notify_failed"] += 1
+                logger.error(
+                    "Retry notification crashed for %s/%s: %s",
+                    lead.chain,
+                    lead.token_symbol,
+                    e,
+                )
+                continue
+
+            if not success:
+                poll_metrics["retried_notify_failed"] += 1
+                await self._record_notification_failure(lead, poll_metrics)
+                continue
+
+            poll_metrics["retried_notified"] += 1
+            self._service_attempts["db"] += 1
+            try:
+                await self._db.mark_notified(lead.chain, lead.token_address)
+            except Exception as e:
+                self._service_errors["db"] += 1
+                logger.warning(
+                    "Failed to mark retried notification as sent for %s/%s: %s",
+                    lead.chain,
+                    lead.token_symbol,
+                    e,
+                )
+
+    async def _record_notification_failure(
+        self, lead: LeadRecord, poll_metrics: Counter[str]
+    ) -> None:
+        self._service_attempts["db"] += 1
+        try:
+            scheduled, attempts, next_retry_at = await self._db.record_notification_failure(
+                lead.chain,
+                lead.token_address,
+                f"notification failed for {lead.chain}/{lead.token_symbol}",
+                max_attempts=self._config.notification_retry_max_attempts,
+                base_delay_seconds=self._config.notification_retry_base_delay_seconds,
+                max_delay_seconds=self._config.notification_retry_max_delay_seconds,
+            )
+        except Exception as e:
+            self._service_errors["db"] += 1
+            logger.warning(
+                "Failed to record notification failure for %s/%s: %s",
+                lead.chain,
+                lead.token_symbol,
+                e,
+            )
+            return
+
+        if scheduled and next_retry_at is not None:
+            poll_metrics["notify_retry_scheduled"] += 1
+            logger.warning(
+                "Notification failed for %s/%s (attempt %d/%d); retry scheduled at %s",
+                lead.chain,
+                lead.token_symbol,
+                attempts,
+                self._config.notification_retry_max_attempts,
+                next_retry_at.isoformat(),
+            )
+            return
+
+        poll_metrics["notify_dead_lettered"] += 1
+        logger.error(
+            "Notification dead-lettered for %s/%s after %d attempts",
+            lead.chain,
+            lead.token_symbol,
+            attempts,
+        )
 
     def _log_service_health(self) -> None:
         services = sorted(set(self._service_attempts) | set(self._service_errors))

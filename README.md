@@ -120,6 +120,10 @@ python -m src.main
 | `DEXSCREENER_PAIR_FETCH_CONCURRENCY` | Concurrent pair lookups per poll (default: `8`) |
 | `DEXSCREENER_MAX_PROFILES_PER_POLL` | Max candidate profiles processed per poll (default: `120`) |
 | `DEXSCREENER_FAIR_CHAIN_SAMPLING` | Balance profile selection across tracked chains (default: `true`) |
+| `NOTIFICATION_RETRY_MAX_ATTEMPTS` | Max send attempts before dead-letter (default: `5`) |
+| `NOTIFICATION_RETRY_BASE_DELAY_SECONDS` | Exponential backoff base delay (default: `60`) |
+| `NOTIFICATION_RETRY_MAX_DELAY_SECONDS` | Cap for retry delay (default: `1800`) |
+| `NOTIFICATION_RETRY_BATCH_SIZE` | Max due retries processed per poll (default: `25`) |
 
 ---
 
@@ -136,6 +140,15 @@ By default (`ALLOW_TEST_LEADS=false`), a token is processed and notified when al
 Set `ALLOW_TEST_LEADS=true` to bypass strict filters for test runs.
 
 If you are seeing mostly Solana leads, set `TRACKED_CHAINS=ethereum,bsc,base` or keep Solana but leave `DEXSCREENER_FAIR_CHAIN_SAMPLING=true` to balance sampling.
+
+---
+
+## Notification Retry Policy
+
+- New leads are stored first, then notified.
+- If notification fails, the lead is queued with exponential backoff and retry metadata.
+- Retries stop after `NOTIFICATION_RETRY_MAX_ATTEMPTS`; failed leads are marked dead-letter and excluded from further retries.
+- During schema upgrade to retry-queue mode, historical `notified=0` rows are marked notified once to avoid replaying old leads.
 
 ---
 
@@ -160,8 +173,9 @@ python3 -m unittest discover -s tests -v
 The repository includes tests for:
 
 1. Dexscreener parser/social extraction helpers
-2. DB insertion idempotency
+2. DB insertion idempotency + notification retry/dead-letter state transitions
 3. Notifier HTML safety formatting
+4. End-to-end retry flow (fail once, then succeed)
 
 ---
 

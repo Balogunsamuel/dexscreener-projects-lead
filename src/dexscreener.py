@@ -246,12 +246,12 @@ class DexscreenerClient:
             if not pairs:
                 return None
 
-            # Process first pair (primary)
-            pair_data = pairs[0]
-            token_pair = self._parse_pair(pair_data, chain_id)
-            if token_pair is None:
+            # Explicitly pick the freshest valid pair by pairCreatedAt.
+            selected = self._select_primary_pair(pairs, chain_id)
+            if selected is None:
                 self._metrics["parse_failures"] += 1
                 return None
+            token_pair, pair_data = selected
 
             # Check freshness
             age_minutes = (
@@ -274,6 +274,21 @@ class DexscreenerClient:
             return token_pair, social
 
     # ── Internal Parsers ────────────────────────────────────────
+
+    @classmethod
+    def _select_primary_pair(
+        cls, pairs: list[dict[str, Any]], chain_id: str
+    ) -> Optional[tuple[TokenPair, dict[str, Any]]]:
+        valid_pairs: list[tuple[TokenPair, dict[str, Any]]] = []
+        for pair_data in pairs:
+            parsed = cls._parse_pair(pair_data, chain_id)
+            if parsed is not None:
+                valid_pairs.append((parsed, pair_data))
+
+        if not valid_pairs:
+            return None
+
+        return max(valid_pairs, key=lambda item: item[0].pair_created_at)
 
     @staticmethod
     def _parse_pair(pair_data: dict, chain_id: str) -> Optional[TokenPair]:

@@ -100,7 +100,8 @@ class TelegramAdminExtractor:
         assert self._client is not None
 
         username = self._extract_username(tg_link)
-        result = AdminResult()
+        # Start conservative: treat unknown/failed states as hidden.
+        result = AdminResult(admins_hidden=True)
 
         try:
             # Resolve entity
@@ -169,6 +170,7 @@ class TelegramAdminExtractor:
                 filter=ChannelParticipantsAdmins(),
                 limit=100,
             )
+            result.admins_hidden = False
 
             for participant in participants:
                 user_username = getattr(participant, "username", None)

@@ -139,6 +139,20 @@ class Config:
     dexscreener_fair_chain_sampling: bool = field(
         default_factory=lambda: _optional_bool("DEXSCREENER_FAIR_CHAIN_SAMPLING", True)
     )
+    notification_retry_max_attempts: int = field(
+        default_factory=lambda: _optional_int("NOTIFICATION_RETRY_MAX_ATTEMPTS", 5) or 5
+    )
+    notification_retry_base_delay_seconds: int = field(
+        default_factory=lambda: _optional_int("NOTIFICATION_RETRY_BASE_DELAY_SECONDS", 60)
+        or 60
+    )
+    notification_retry_max_delay_seconds: int = field(
+        default_factory=lambda: _optional_int("NOTIFICATION_RETRY_MAX_DELAY_SECONDS", 1800)
+        or 1800
+    )
+    notification_retry_batch_size: int = field(
+        default_factory=lambda: _optional_int("NOTIFICATION_RETRY_BATCH_SIZE", 25) or 25
+    )
 
     # ── Solana ──────────────────────────────────────────────────
     solana_rpc_url: str = field(
@@ -156,6 +170,22 @@ class Config:
             raise EnvironmentError("DEXSCREENER_PAIR_FETCH_CONCURRENCY must be > 0")
         if self.dexscreener_max_profiles_per_poll <= 0:
             raise EnvironmentError("DEXSCREENER_MAX_PROFILES_PER_POLL must be > 0")
+        if self.notification_retry_max_attempts <= 0:
+            raise EnvironmentError("NOTIFICATION_RETRY_MAX_ATTEMPTS must be > 0")
+        if self.notification_retry_base_delay_seconds <= 0:
+            raise EnvironmentError("NOTIFICATION_RETRY_BASE_DELAY_SECONDS must be > 0")
+        if self.notification_retry_max_delay_seconds <= 0:
+            raise EnvironmentError("NOTIFICATION_RETRY_MAX_DELAY_SECONDS must be > 0")
+        if (
+            self.notification_retry_max_delay_seconds
+            < self.notification_retry_base_delay_seconds
+        ):
+            raise EnvironmentError(
+                "NOTIFICATION_RETRY_MAX_DELAY_SECONDS must be >= "
+                "NOTIFICATION_RETRY_BASE_DELAY_SECONDS"
+            )
+        if self.notification_retry_batch_size <= 0:
+            raise EnvironmentError("NOTIFICATION_RETRY_BATCH_SIZE must be > 0")
         if not self.tracked_chains:
             raise EnvironmentError("TRACKED_CHAINS must not be empty")
 

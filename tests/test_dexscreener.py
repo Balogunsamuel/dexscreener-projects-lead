@@ -76,6 +76,38 @@ class DexscreenerParserTests(unittest.TestCase):
         self.assertEqual(socials.twitter_link, "https://x.com/pair_twitter")
         self.assertEqual(socials.website, "https://mytoken.example")
 
+    def test_select_primary_pair_prefers_newest_pair(self) -> None:
+        older_pair = {
+            "baseToken": {
+                "name": "TokenName",
+                "symbol": "TKN",
+                "address": "0x1111111111111111111111111111111111111111",
+            },
+            "pairAddress": "0x2222222222222222222222222222222222222222",
+            "pairCreatedAt": 1700000000000,
+            "url": "https://dexscreener.com/ethereum/0x2222222222222222222222222222222222222222",
+        }
+        newer_pair = {
+            "baseToken": {
+                "name": "TokenName",
+                "symbol": "TKN",
+                "address": "0x1111111111111111111111111111111111111111",
+            },
+            "pairAddress": "0x3333333333333333333333333333333333333333",
+            "pairCreatedAt": 1800000000000,
+            "url": "https://dexscreener.com/ethereum/0x3333333333333333333333333333333333333333",
+        }
+
+        selected = DexscreenerClient._select_primary_pair(
+            [older_pair, newer_pair], "ethereum"
+        )
+
+        self.assertIsNotNone(selected)
+        assert selected is not None
+        parsed_pair, raw_pair = selected
+        self.assertEqual(parsed_pair.pair_address, newer_pair["pairAddress"])
+        self.assertEqual(raw_pair["pairAddress"], newer_pair["pairAddress"])
+
 
 if __name__ == "__main__":
     unittest.main()
