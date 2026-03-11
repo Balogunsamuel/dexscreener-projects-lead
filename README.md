@@ -90,6 +90,18 @@ pip install -r requirements.txt
 python -m src.main
 ```
 
+### 5. Deploy on VPS (24/7)
+
+See [DEPLOY_VPS.md](DEPLOY_VPS.md) for the full guide.
+
+Quick start:
+
+```bash
+chmod +x scripts/install_systemd_service.sh
+sudo ./scripts/install_systemd_service.sh
+sudo systemctl status dexscreener-lead-bot
+```
+
 ---
 
 ## Environment Variables

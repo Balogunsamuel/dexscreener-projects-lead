@@ -1,0 +1,18 @@
+[Unit]
+Description=Dexscreener Lead Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/dexscreener
+ExecStart=/opt/dexscreener/.venv/bin/python -m src.main
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
